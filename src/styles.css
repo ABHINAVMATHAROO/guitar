@@ -33,10 +33,21 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  min-height: 100%;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(circle at top, rgba(255, 252, 247, 0.55), transparent 30%),
+    linear-gradient(180deg, #e1d9ce 0%, var(--bg) 42%, var(--bg-deep) 100%);
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 button {
@@ -47,12 +58,24 @@ button {
 
 .shell {
   width: min(100%, 30rem);
+  min-height: 100vh;
+  min-height: 100dvh;
   margin: 0 auto;
-  padding: 1.25rem 0.95rem 2.5rem;
+  padding: calc(1.25rem + env(safe-area-inset-top, 0px)) 0.95rem calc(2.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 .brand-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
   padding: 0.4rem 0.2rem 0.7rem;
+}
+
+.brand-logo {
+  width: clamp(2.8rem, 12vw, 4.1rem);
+  height: clamp(2.8rem, 12vw, 4.1rem);
+  object-fit: contain;
+  flex: 0 0 auto;
 }
 
 .brand-name {
@@ -236,8 +259,11 @@ button {
 .picker-wheel {
   height: 230px;
   overflow-y: auto;
+  overflow-x: hidden;
   scroll-snap-type: y mandatory;
   scrollbar-width: none;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
 }
 
 .picker-wheel::-webkit-scrollbar {
@@ -567,4 +593,8 @@ button {
   letter-spacing: 0.03em;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
+
+
+
+
 

@@ -153,7 +153,22 @@ export function useAudioMatcher(expectedPitchClasses) {
   }, [expectedPitchClasses]);
 
   useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'hidden') {
+        stopListening();
+      }
+    }
+
+    function handlePageHide() {
+      stopListening();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
       stopListening();
     };
   }, []);
@@ -391,3 +406,4 @@ export function useAudioMatcher(expectedPitchClasses) {
     stopListening,
   };
 }
+

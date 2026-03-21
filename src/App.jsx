@@ -17,6 +17,8 @@ const BPM_OPTIONS = Array.from({ length: 181 }, (_, index) => {
 const ROOT_OPTIONS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map(
   (note) => ({ value: note, label: note }),
 );
+const ASSET_BASE = import.meta.env.BASE_URL;
+
 const QUALITY_OPTIONS = [
   { value: '', label: 'maj' },
   { value: 'm', label: 'min' },
@@ -453,6 +455,7 @@ export default function App() {
     <main className="shell">
       <header className="brand-bar">
         <p className="brand-name">Corda</p>
+        <img src={`${ASSET_BASE}corda.png`} alt="Corda logo" className="brand-logo" />
       </header>
 
       <section
@@ -576,6 +579,9 @@ export default function App() {
     </main>
   );
 }
+
+
+
 
 
 

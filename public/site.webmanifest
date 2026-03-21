@@ -1,0 +1,22 @@
+{
+  "name": "Corda",
+  "short_name": "Corda",
+  "description": "Minimal mobile chord trainer that listens to your guitar and checks the current chord.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#d3cbc0",
+  "theme_color": "#d3cbc0",
+  "icons": [
+    {
+      "src": "android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
