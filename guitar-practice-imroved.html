@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guitar Practice</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg0: #0d0d0c;
+  --bg1: #141413;
+  --bg2: #1c1c1a;
+  --bg3: #252522;
+  --bg4: #2e2e2b;
+  --line: rgba(255,255,255,0.07);
+  --line2: rgba(255,255,255,0.13);
+  --text: #e8e6df;
+  --text2: #8a8880;
+  --text3: #555450;
+  --green: #22c55e;
+  --green-dim: rgba(34,197,94,0.12);
+  --green-border: rgba(34,197,94,0.25);
+  --amber: #f59e0b;
+  --amber-dim: rgba(245,158,11,0.12);
+  --red: #f87171;
+  --blue: #60a5fa;
+  --blue-dim: rgba(96,165,250,0.15);
+}
+
+body {
+  background: var(--bg0);
+  color: var(--text);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+.shell {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+.header-title {
+  display: flex; align-items: center; gap: 10px;
+}
+.logo-icon {
+  width: 28px; height: 28px;
+  background: var(--green-dim);
+  border: 1px solid var(--green-border);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+}
+.app-name {
+  font-size: 15px; font-weight: 500; letter-spacing: .01em; color: var(--text);
+}
+.header-controls {
+  display: flex; align-items: center; gap: 8px;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+button {
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: 7px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  color: var(--text2);
+  cursor: pointer;
+  transition: all .12s;
+  letter-spacing: .02em;
+}
+button:hover { background: var(--bg3); color: var(--text); border-color: rgba(255,255,255,.2); }
+button:active { transform: scale(0.97); }
+button.primary {
+  background: var(--green-dim);
+  border-color: var(--green-border);
+  color: var(--green);
+}
+button.primary:hover { background: rgba(34,197,94,0.18); }
+button.danger { background: rgba(248,113,113,0.1); border-color: rgba(248,113,113,0.25); color: var(--red); }
+button.sm { padding: 5px 10px; font-size: 11px; }
+
+/* ── Selects ─────────────────────────────────────────────────── */
+select {
+  background: var(--bg2); border: 1px solid var(--line2);
+  border-radius: 7px; padding: 6px 10px;
+  font-size: 12px; font-family: 'DM Sans', system-ui, sans-serif;
+  color: var(--text2); cursor: pointer;
+  appearance: none; padding-right: 24px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23666' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center;
+}
+select:hover { border-color: rgba(255,255,255,.2); color: var(--text); }
+
+/* ── Dot status ──────────────────────────────────────────────── */
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text3); flex-shrink: 0; }
+.dot.on { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,.5); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+/* ── Signal badge ────────────────────────────────────────────── */
+.sig-row { margin-bottom: 1.75rem; display: flex; align-items: center; gap: 10px; }
+.sig-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 500; letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 4px 10px 4px 8px;
+  border-radius: 20px;
+  background: var(--bg2); color: var(--text3);
+  border: 1px solid var(--line);
+  transition: all .25s;
+}
+.sig-badge .pip {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: currentColor; opacity: .6;
+}
+.sig-badge.good { background: var(--green-dim); color: var(--green); border-color: var(--green-border); }
+.sig-badge.buzzy { background: var(--amber-dim); color: var(--amber); border-color: rgba(245,158,11,.25); }
+
+/* ── Section ─────────────────────────────────────────────────── */
+.section { margin-bottom: 2.5rem; }
+.section-header {
+  display: flex; align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: .75rem;
+}
+.section-title {
+  font-size: 11px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .08em;
+  color: var(--text3);
+}
+
+/* ── Charts ──────────────────────────────────────────────────── */
+.chart-wrap {
+  position: relative; width: 100%; height: 190px;
+  border: 1px solid var(--line);
+  border-radius: 10px; overflow: hidden;
+  background: var(--bg1);
+  margin-bottom: 1rem;
+}
+.chart-wrap canvas { display: block; width: 100%; height: 100%; }
+
+/* ── Chroma bars ─────────────────────────────────────────────── */
+.chroma-row {
+  display: flex; gap: 3px; height: 60px; align-items: flex-end;
+  margin-bottom: 1.25rem;
+}
+.cbar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.cbar-bg {
+  width: 100%; flex: 1; position: relative;
+  border-radius: 2px; overflow: hidden;
+  background: var(--bg3);
+}
+.cbar-tgt, .cbar-live {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  transition: height .06s;
+}
+.cbar-lbl { font-size: 8px; color: var(--text3); font-family: 'DM Mono', monospace; line-height: 1; }
+
+/* ── Metrics row ─────────────────────────────────────────────── */
+.metrics { display: flex; gap: 8px; }
+.metric {
+  flex: 1; background: var(--bg1);
+  border: 1px solid var(--line);
+  border-radius: 9px; padding: .6rem .85rem;
+}
+.mlbl { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .04em; }
+.mval {
+  font-size: 22px; font-weight: 400;
+  font-family: 'DM Mono', monospace;
+  margin-top: 1px; color: var(--text);
+  transition: color .2s; letter-spacing: -.02em;
+}
+
+/* ── Divider ─────────────────────────────────────────────────── */
+.divider { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
+
+/* ── Rhythm controls ─────────────────────────────────────────── */
+.rhythm-ctrl {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; margin-bottom: 1.25rem;
+}
+.bpm-group { display: flex; align-items: center; gap: 7px; }
+.bpm-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; }
+.bpm-num {
+  font-family: 'DM Mono', monospace;
+  font-size: 18px; font-weight: 500;
+  color: var(--text); min-width: 36px;
+  letter-spacing: -.02em;
+}
+
+input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  height: 3px; background: var(--bg4);
+  border-radius: 2px; outline: none;
+  cursor: pointer; width: 110px;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--text2);
+  cursor: pointer; transition: background .1s;
+  border: 2px solid var(--bg0);
+}
+input[type=range]:hover::-webkit-slider-thumb { background: var(--text); }
+
+/* ── Pattern editor ──────────────────────────────────────────── */
+.pattern-section { margin-bottom: 1rem; }
+.pattern-top {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.pattern-sublabel { font-size: 10px; color: var(--text3); letter-spacing: .03em; }
+.pattern-row { display: flex; gap: 3px; }
+.pat-cell {
+  flex: 1; height: 34px; border-radius: 5px;
+  border: 1px solid var(--line2);
+  background: var(--bg2); cursor: pointer;
+  font-size: 10px; font-family: 'DM Mono', monospace;
+  color: var(--text3);
+  display: flex; align-items: center; justify-content: center;
+  transition: all .1s; user-select: none; position: relative;
+}
+.pat-cell:hover { background: var(--bg3); border-color: rgba(255,255,255,.18); color: var(--text2); }
+.pat-cell.on {
+  background: var(--green-dim);
+  border-color: var(--green-border);
+  color: var(--green);
+}
+.pat-cell.beat-strong { border-top: 2px solid var(--bg4); }
+
+/* ── Beat indicator ──────────────────────────────────────────── */
+.beat-row { display: flex; gap: 3px; margin-bottom: 1rem; }
+.beat-pip {
+  flex: 1; height: 4px; border-radius: 2px;
+  background: var(--bg3); transition: all .05s;
+}
+.beat-pip.active { background: var(--blue); box-shadow: 0 0 4px rgba(96,165,250,.4); }
+.beat-pip.q { background: var(--bg4); }
+
+/* ── Error bar ───────────────────────────────────────────────── */
+.errbar {
+  display: none; background: rgba(248,113,113,.08);
+  border: 1px solid rgba(248,113,113,.2);
+  border-left: 3px solid var(--red);
+  border-radius: 8px; padding: 9px 12px;
+  font-size: 12px; color: var(--red);
+  margin-bottom: 1.25rem;
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div id="errbar" class="errbar"></div>
+
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <div class="header">
+    <div class="header-title">
+      <div class="logo-icon">♩</div>
+      <span class="app-name">Guitar practice</span>
+    </div>
+    <div class="header-controls">
+      <select id="chordSel">
+        <option value="C">C major</option>
+        <option value="G" selected>G major</option>
+        <option value="D">D major</option>
+        <option value="A">A major</option>
+        <option value="E">E major</option>
+        <option value="Am">A minor</option>
+        <option value="Em">E minor</option>
+        <option value="Dm">D minor</option>
+        <option value="F">F major</option>
+      </select>
+      <button id="startBtn" class="primary">Start mic</button>
+      <div class="dot" id="dot"></div>
+    </div>
+  </div>
+
+  <!-- ── Signal quality ─────────────────────────────────────── -->
+  <div class="sig-row">
+    <div class="sig-badge" id="sigBadge"><span class="pip"></span>No signal</div>
+  </div>
+
+  <!-- ── Chord accuracy ─────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Chord accuracy</span>
+      <span style="font-size:10px;color:var(--text3)">Chroma cosine similarity · 70% target</span>
+    </div>
+
+    <div class="chart-wrap"><canvas id="ecg"></canvas></div>
+
+    <div class="chroma-row" id="chromaRow"></div>
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="mlbl">Similarity</div>
+        <div class="mval" id="mSim">—</div>
+      </div>
+      <div class="metric">
+        <div class="mlbl">Detected</div>
+        <div class="mval" id="mDetect" style="color:var(--text3)">—</div>
+      </div>
+      <div class="metric">
+        <div class="mlbl">Target</div>
+        <div class="mval" id="mTarget" style="color:var(--text3)">G</div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── Strumming rhythm ────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Strumming rhythm</span>
+      <span style="font-size:10px;color:var(--text3)">Beat timing accuracy · 70% target</span>
+    </div>
+
+    <div class="rhythm-ctrl">
+      <div class="bpm-group">
+        <span class="bpm-label">BPM</span>
+        <span class="bpm-num" id="bpmVal">80</span>
+        <input type="range" id="bpmSlider" min="40" max="180" value="80" step="1">
+      </div>
+      <select id="presetSel">
+        <option value="quarter">Quarter notes</option>
+        <option value="eighth">Eighth notes</option>
+        <option value="ddu">D D DU</option>
+        <option value="dduudu">D DU UDU</option>
+        <option value="reggae">Reggae off-beats</option>
+      </select>
+      <button class="sm" id="resetBtn">Reset</button>
+    </div>
+
+    <div class="pattern-section">
+      <div class="pattern-top">
+        <span class="pattern-sublabel">Pattern — click to toggle 8th-note positions</span>
+        <span class="pattern-sublabel" id="patHint">4 strums / bar</span>
+      </div>
+      <div class="pattern-row" id="patRow"></div>
+    </div>
+
+    <div class="beat-row" id="beatRow"></div>
+
+    <div class="chart-wrap"><canvas id="recg"></canvas></div>
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="mlbl">Last beat</div>
+        <div class="mval" id="mBeat">—</div>
+      </div>
+      <div class="metric">
+        <div class="mlbl">Session avg</div>
+        <div class="mval" id="mAvg">—</div>
+      </div>
+      <div class="metric">
+        <div class="mlbl">Strums</div>
+        <div class="mval" id="mStrums">0</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /shell -->
+
+<script>
+// ── Chord definitions ────────────────────────────────────────────────────────
+const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const CHORDS = {
+  C:[0,4,7], G:[7,11,2], D:[2,6,9], A:[9,1,4], E:[4,8,11],
+  Am:[9,0,4], Em:[4,7,11], Dm:[2,5,9], F:[5,9,0]
+};
+const PRESETS = {
+  quarter: [1,0,1,0,1,0,1,0],
+  eighth:  [1,1,1,1,1,1,1,1],
+  ddu:     [1,0,1,0,1,0,1,1],
+  dduudu:  [1,0,1,1,0,1,0,1],
+  reggae:  [0,1,0,1,0,1,0,1]
+};
+const PAT_LABELS = ['1','e','+','a','2','e','+','a'];
+
+// ── Audio state ──────────────────────────────────────────────────────────────
+let audioCtx, analyser, micSrc, rafId;
+let listening = false;
+
+// ── DSP state ────────────────────────────────────────────────────────────────
+let prevMag = null;
+const fluxBuf = [];
+let lastOnsetT = -1;
+let smoothChroma = new Float32Array(12);
+let smoothRms = 0;          // low-pass filtered RMS for robust silence gate
+let lastStrumT = -1;        // time of last confirmed onset
+
+// ── Chart histories ──────────────────────────────────────────────────────────
+const N = 600;
+const chromaH = new Float32Array(N);   // 0–1
+const rhythmH = new Float32Array(N);   // 0–1
+let cPtr = 0, rPtr = 0;
+
+// ── Rhythm state ─────────────────────────────────────────────────────────────
+let rhythmRef = null;
+let onsetCount = 0;
+const accBuf = [];
+
+// ── Pattern state ────────────────────────────────────────────────────────────
+let pat = [...PRESETS.quarter];
+
+// ── Build chroma bars ────────────────────────────────────────────────────────
+const chromaRow = document.getElementById('chromaRow');
+const bars = [];
+for (let i = 0; i < 12; i++) {
+  const wrap = document.createElement('div'); wrap.className = 'cbar';
+  const bg = document.createElement('div'); bg.className = 'cbar-bg';
+  const tgt = document.createElement('div'); tgt.className = 'cbar-tgt';
+  const live = document.createElement('div'); live.className = 'cbar-live';
+  bg.append(tgt, live);
+  const lbl = document.createElement('div'); lbl.className = 'cbar-lbl';
+  lbl.textContent = NOTES[i];
+  wrap.append(bg, lbl); chromaRow.append(wrap);
+  bars.push({ tgt, live });
+}
+
+// ── Build pattern editor ─────────────────────────────────────────────────────
+const patRow = document.getElementById('patRow');
+const patCells = [];
+for (let i = 0; i < 8; i++) {
+  const cell = document.createElement('div');
+  cell.className = 'pat-cell' + (pat[i] ? ' on' : '') + ([0,2,4,6].includes(i) ? ' beat-strong' : '');
+  cell.textContent = PAT_LABELS[i];
+  cell.addEventListener('click', () => {
+    pat[i] = pat[i] ? 0 : 1;
+    cell.classList.toggle('on', !!pat[i]);
+    updatePatHint();
+  });
+  patRow.append(cell); patCells.push(cell);
+}
+
+function updatePatHint() {
+  const n = pat.filter(Boolean).length;
+  document.getElementById('patHint').textContent = n + ' strum' + (n !== 1 ? 's' : '') + ' / bar';
+}
+
+document.getElementById('presetSel').addEventListener('change', e => {
+  const p = PRESETS[e.target.value] || PRESETS.quarter;
+  for (let i = 0; i < 8; i++) { pat[i] = p[i]; patCells[i].classList.toggle('on', !!p[i]); }
+  updatePatHint();
+});
+
+// ── Build beat indicator ─────────────────────────────────────────────────────
+const beatRow = document.getElementById('beatRow');
+const beatPips = [];
+for (let i = 0; i < 8; i++) {
+  const d = document.createElement('div');
+  d.className = 'beat-pip' + ([0,2,4,6].includes(i) ? ' q' : '');
+  beatRow.append(d); beatPips.push(d);
+}
+
+// ── BPM slider ───────────────────────────────────────────────────────────────
+document.getElementById('bpmSlider').addEventListener('input', function() {
+  document.getElementById('bpmVal').textContent = this.value;
+});
+
+// ── Reset rhythm ─────────────────────────────────────────────────────────────
+document.getElementById('resetBtn').addEventListener('click', () => {
+  rhythmRef = null; onsetCount = 0; accBuf.length = 0;
+  rhythmH.fill(0); rPtr = 0;
+  document.getElementById('mBeat').textContent = '—';
+  document.getElementById('mAvg').textContent = '—';
+  document.getElementById('mStrums').textContent = '0';
+});
+
+// ── DSP helpers ──────────────────────────────────────────────────────────────
+function makeTemplate(notes) {
+  const t = new Float32Array(12);
+  notes.forEach(n => t[n] = 1);
+  const s = t.reduce((a,b) => a+b, 0);
+  for (let i=0;i<12;i++) t[i] /= s;
+  return t;
+}
+function cosSim(a, b) {
+  let d=0, na=0, nb=0;
+  for (let i=0;i<12;i++) { d+=a[i]*b[i]; na+=a[i]*a[i]; nb+=b[i]*b[i]; }
+  return (na && nb) ? d / Math.sqrt(na * nb) : 0;
+}
+function detectBest(chroma) {
+  let best='', bs=-1;
+  for (const [k, v] of Object.entries(CHORDS)) {
+    const s = cosSim(chroma, makeTemplate(v));
+    if (s > bs) { bs = s; best = k; }
+  }
+  return { name: best, sim: bs };
+}
+function computeChroma(fData, sr, fftSize) {
+  const c = new Float32Array(12);
+  const bf = sr / fftSize; let tot = 0;
+  for (let i=2; i<fData.length; i++) {
+    const freq = i * bf;
+    if (freq < 60 || freq > 2600) continue;
+    const mag = Math.pow(10, fData[i] / 20);
+    const e = mag * mag;
+    const midi = 69 + 12 * Math.log2(freq / 440);
+    const pc = ((Math.round(midi) % 12) + 12) % 12;
+    c[pc] += e; tot += e;
+  }
+  if (tot > 0) for (let i=0;i<12;i++) c[i] /= tot;
+  return c;
+}
+function computeFlux(fData) {
+  const mag = new Float32Array(fData.length);
+  for (let i=0; i<fData.length; i++) mag[i] = Math.pow(10, fData[i] / 20);
+  let flux = 0;
+  if (prevMag) for (let i=0; i<mag.length; i++) { const d = mag[i]-prevMag[i]; if (d>0) flux+=d; }
+  prevMag = mag;
+  fluxBuf.push(flux); if (fluxBuf.length > 20) fluxBuf.shift();
+  return flux;
+}
+function computeHNR(td, sr) {
+  const n = 512;
+  const mn = Math.floor(sr / 1000);
+  const mx = Math.min(Math.floor(sr / 60), n - 1);
+  let energy = 0;
+  for (let i=0; i<n; i++) energy += td[i] * td[i];
+  if (energy / n < 0.0001) return 0;
+  let best = 0;
+  for (let lag=mn; lag<=mx; lag++) {
+    let c = 0; const len = n - lag;
+    for (let i=0; i<len; i++) c += td[i] * td[i+lag];
+    c /= len; if (c > best) best = c;
+  }
+  return Math.max(0, Math.min(1, best / (energy / n)));
+}
+function computeRhythmAcc(t) {
+  if (!rhythmRef) { rhythmRef = t; return 1.0; }
+  const bpm = parseInt(document.getElementById('bpmSlider').value);
+  const eighthDur = (60 / bpm) / 2;
+  const barDur = eighthDur * 8;
+  const posIn8 = ((t - rhythmRef) % barDur) / eighthDur;
+  const hasAny = pat.some(Boolean);
+  if (!hasAny) return 0;
+  let minErr = Infinity;
+  for (let i=0; i<8; i++) {
+    if (!pat[i]) continue;
+    let diff = posIn8 - i;
+    if (diff > 4) diff -= 8;
+    if (diff < -4) diff += 8;
+    if (Math.abs(diff) < Math.abs(minErr)) minErr = diff;
+  }
+  const errMs = minErr * eighthDur * 1000;
+  return Math.max(0, Math.min(1, 1 - Math.abs(errMs) / 150));
+}
+
+// ── Canvas setup ─────────────────────────────────────────────────────────────
+const ecgCanvas = document.getElementById('ecg');
+const recgCanvas = document.getElementById('recg');
+function resizeCanvas(c) { c.width = c.offsetWidth * devicePixelRatio; c.height = c.offsetHeight * devicePixelRatio; }
+function resizeAll() { resizeCanvas(ecgCanvas); resizeCanvas(recgCanvas); }
+resizeAll();
+window.addEventListener('resize', () => { resizeAll(); drawBoth(); });
+
+// ── Draw ECG ─────────────────────────────────────────────────────────────────
+function drawECG(canvas, hist, ptr, threshold) {
+  const W = canvas.width, H = canvas.height;
+  const ctx = canvas.getContext('2d');
+
+  // background
+  ctx.fillStyle = '#141413';
+  ctx.fillRect(0, 0, W, H);
+
+  // grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  for (let i=0; i<=4; i++) {
+    const y = (i/4)*H;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  }
+  for (let i=0; i<=8; i++) {
+    const x = (i/8)*W;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+  }
+
+  // threshold line
+  const LPAD = 34 * devicePixelRatio;
+  const cW = W - LPAD;
+  const ty = H * (1 - threshold);
+  ctx.setLineDash([4,4]); ctx.lineWidth = 1 * devicePixelRatio;
+  ctx.strokeStyle = 'rgba(96,165,250,0.35)';
+  ctx.beginPath(); ctx.moveTo(LPAD, ty); ctx.lineTo(W, ty); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // threshold label
+  ctx.fillStyle = 'rgba(96,165,250,0.5)';
+  ctx.font = `${9.5 * devicePixelRatio}px DM Mono, monospace`;
+  ctx.textAlign = 'left';
+  ctx.fillText(Math.round(threshold*100)+'%', LPAD + 4*devicePixelRatio, ty - 4*devicePixelRatio);
+
+  // y-axis labels
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.font = `${9 * devicePixelRatio}px DM Mono, monospace`;
+  ctx.textAlign = 'right';
+  [0, 50, 100].forEach(v => {
+    const y = H * (1 - v/100);
+    ctx.fillText(v+'%', LPAD - 5*devicePixelRatio, y + 3*devicePixelRatio);
+  });
+
+  // ECG line — colored by above/below threshold
+  ctx.lineWidth = 2 * devicePixelRatio;
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  let seg = [], prevAbove = null;
+  for (let i=0; i<N; i++) {
+    const idx = (ptr - N + i + 2*N) % N;
+    const v = hist[idx];
+    const x = LPAD + (i/N) * cW;
+    const y = H * (1 - v);
+    const above = v >= threshold;
+    if (i === 0) { seg = [[x,y]]; prevAbove = above; }
+    else {
+      if (above !== prevAbove) {
+        const v0 = hist[(ptr-N+i-1+2*N)%N];
+        const t2 = (threshold - v0) / (v - v0);
+        const xi = LPAD + ((i-1+t2)/N) * cW;
+        const yi = H * (1-threshold);
+        seg.push([xi, yi]);
+        ctx.strokeStyle = prevAbove ? '#22c55e' : '#f87171';
+        ctx.beginPath(); seg.forEach(([sx,sy],k) => k===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy)); ctx.stroke();
+        seg = [[xi,yi],[x,y]]; prevAbove = above;
+      } else { seg.push([x,y]); }
+    }
+  }
+  if (seg.length > 1) {
+    ctx.strokeStyle = prevAbove ? '#22c55e' : '#f87171';
+    ctx.beginPath(); seg.forEach(([sx,sy],k) => k===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy)); ctx.stroke();
+  }
+
+  // live dot
+  const cv = hist[(ptr-1+N)%N];
+  const dx = LPAD + ((N-1)/N)*cW, dy = H*(1-cv);
+  ctx.beginPath(); ctx.arc(dx, dy, 4.5*devicePixelRatio, 0, Math.PI*2);
+  ctx.fillStyle = cv >= threshold ? '#22c55e' : '#f87171';
+  ctx.fill();
+}
+
+function drawBoth() {
+  drawECG(ecgCanvas, chromaH, cPtr, 0.70);
+  drawECG(recgCanvas, rhythmH, rPtr, 0.70);
+}
+
+// ── Beat indicator ────────────────────────────────────────────────────────────
+function updateBeats(acxT) {
+  if (!rhythmRef || !listening) { beatPips.forEach(p => p.classList.remove('active')); return; }
+  const bpm = parseInt(document.getElementById('bpmSlider').value);
+  const eighthDur = (60/bpm)/2;
+  const barDur = eighthDur*8;
+  const posIn8 = ((acxT - rhythmRef) % barDur) / eighthDur;
+  const beat = Math.floor(posIn8) % 8;
+  beatPips.forEach((p,i) => {
+    p.classList.toggle('active', i === beat);
+    p.style.opacity = pat[i] ? '1' : '0.3';
+  });
+}
+
+// ── Main loop ─────────────────────────────────────────────────────────────────
+function loop() {
+  const fData = new Float32Array(analyser.frequencyBinCount);
+  analyser.getFloatFrequencyData(fData);
+  const tData = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(tData);
+
+  // RMS — low-pass filter for stable silence gate
+  let rms = 0;
+  for (const s of tData) rms += s*s;
+  rms = Math.sqrt(rms / tData.length);
+  smoothRms = 0.85 * smoothRms + 0.15 * rms;
+  const silent = smoothRms < 0.013;   // raised threshold — ignores mic hiss & room noise
+
+  // HNR & signal badge
+  const hnr = computeHNR(tData, audioCtx.sampleRate);
+  const badge = document.getElementById('sigBadge');
+  if (silent) {
+    badge.className = 'sig-badge'; badge.innerHTML = '<span class="pip"></span>No signal';
+  } else if (hnr > 0.30) {
+    badge.className = 'sig-badge good'; badge.innerHTML = '<span class="pip"></span>Good';
+  } else {
+    badge.className = 'sig-badge buzzy'; badge.innerHTML = '<span class="pip"></span>Buzzy — check finger pressure';
+  }
+
+  // Onset detection — only when above silence gate
+  const flux = computeFlux(fData);
+  const fluxAvg = fluxBuf.length ? fluxBuf.reduce((a,b)=>a+b,0)/fluxBuf.length : 0;
+  const acxT = audioCtx.currentTime;
+  const onset = !silent && flux > fluxAvg * 2.2 && flux > 1.5 && (acxT - lastOnsetT) > 0.12;
+
+  // Chroma — freeze at 0 when silent, letting the line flatline cleanly
+  const target = document.getElementById('chordSel').value;
+  const tNotes = CHORDS[target];
+  let sim = 0;
+  if (!silent) {
+    const raw = computeChroma(fData, audioCtx.sampleRate, analyser.fftSize);
+    for (let i=0;i<12;i++) smoothChroma[i] = 0.75*smoothChroma[i] + 0.25*raw[i];
+    sim = Math.max(0, cosSim(smoothChroma, makeTemplate(tNotes)));
+  } else {
+    // bleed chroma back toward zero so it doesn't hold stale values
+    for (let i=0;i<12;i++) smoothChroma[i] *= 0.92;
+  }
+  chromaH[cPtr] = sim; cPtr = (cPtr+1) % N;
+
+  // Rhythm
+  const bpm = parseInt(document.getElementById('bpmSlider').value);
+  const barDur = (60 / bpm) * 4;   // 4/4 bar in seconds
+  if (onset) {
+    lastOnsetT = acxT;
+    lastStrumT = acxT;
+    onsetCount++;
+    const acc = computeRhythmAcc(acxT);
+    accBuf.push(acc); if (accBuf.length > 50) accBuf.shift();
+
+    rhythmH[rPtr] = acc; rPtr = (rPtr+1) % N;
+
+    const pct = Math.round(acc*100)+'%';
+    const el = document.getElementById('mBeat');
+    el.textContent = pct; el.style.color = acc>=0.7 ? 'var(--green)' : 'var(--text)';
+    const avg = accBuf.reduce((a,b)=>a+b,0)/accBuf.length;
+    const av = document.getElementById('mAvg');
+    av.textContent = Math.round(avg*100)+'%'; av.style.color = avg>=0.7 ? 'var(--green)' : 'var(--text)';
+    document.getElementById('mStrums').textContent = onsetCount;
+  } else {
+    // Decay to 0 after 1.5 bars of silence — don't hold stale accuracy forever
+    const timeSinceStrum = lastStrumT >= 0 ? acxT - lastStrumT : 999;
+    const prev = rhythmH[(rPtr - 1 + N) % N];
+    rhythmH[rPtr] = timeSinceStrum > barDur * 1.5 ? Math.max(0, prev * 0.97) : prev;
+    rPtr = (rPtr+1) % N;
+  }
+
+  // Draw charts
+  drawBoth();
+
+  // Chroma bars
+  const mx = Math.max(...smoothChroma, 0.01);
+  for (let i=0; i<12; i++) {
+    const isTgt = tNotes.includes(i);
+    const h = Math.min(100, (smoothChroma[i]/mx)*100).toFixed(1);
+    bars[i].live.style.height = h+'%';
+    bars[i].live.style.background = isTgt ? 'rgba(34,197,94,0.8)' : 'rgba(120,118,110,0.4)';
+    bars[i].tgt.style.height = isTgt ? '100%' : '0%';
+    bars[i].tgt.style.background = 'rgba(34,197,94,0.1)';
+  }
+
+  // Chroma metrics
+  const pct2 = Math.round(sim*100);
+  const ms = document.getElementById('mSim');
+  ms.textContent = silent ? '—' : pct2+'%';
+  ms.style.color = silent ? 'var(--text3)' : sim>=0.7 ? 'var(--green)' : 'var(--text)';
+
+  const det = detectBest(smoothChroma);
+  const md = document.getElementById('mDetect');
+  md.textContent = silent ? '—' : det.name;
+  md.style.color = (!silent && det.name===target) ? 'var(--green)' : 'var(--text3)';
+
+  document.getElementById('mTarget').textContent = target;
+
+  // Beat pips
+  updateBeats(acxT);
+
+  rafId = requestAnimationFrame(loop);
+}
+
+// ── Mic start/stop ────────────────────────────────────────────────────────────
+const startBtn = document.getElementById('startBtn');
+startBtn.addEventListener('click', async () => {
+  document.getElementById('errbar').style.display = 'none';
+  if (listening) {
+    cancelAnimationFrame(rafId);
+    if (micSrc) micSrc.disconnect();
+    if (audioCtx) audioCtx.close();
+    prevMag = null; fluxBuf.length = 0; smoothRms = 0; lastStrumT = -1;
+    listening = false;
+    startBtn.textContent = 'Start mic'; startBtn.className = 'primary';
+    document.getElementById('dot').classList.remove('on');
+    document.getElementById('sigBadge').className = 'sig-badge';
+    document.getElementById('sigBadge').innerHTML = '<span class="pip"></span>No signal';
+    beatPips.forEach(p => { p.classList.remove('active'); p.style.opacity='1'; });
+    drawBoth();
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false },
+      video: false
+    });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 8192;
+    analyser.smoothingTimeConstant = 0.4;
+    micSrc = audioCtx.createMediaStreamSource(stream);
+    micSrc.connect(analyser);
+    listening = true;
+    startBtn.textContent = 'Stop'; startBtn.className = 'danger';
+    document.getElementById('dot').classList.add('on');
+    loop();
+  } catch(e) {
+    const eb = document.getElementById('errbar');
+    eb.textContent = 'Mic error: ' + e.message + ' — allow mic access when prompted.';
+    eb.style.display = 'block';
+  }
+});
+
+// Initial draw & hints
+drawBoth();
+updatePatHint();
+document.getElementById('mTarget').textContent = document.getElementById('chordSel').value;
+document.getElementById('chordSel').addEventListener('change', function() {
+  document.getElementById('mTarget').textContent = this.value;
+});
+</script>
+</body>
+</html>

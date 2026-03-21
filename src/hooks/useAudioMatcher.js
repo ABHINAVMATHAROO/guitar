@@ -1,102 +1,69 @@
 import { useEffect, useRef, useState } from 'react';
-import { evaluateChordMatch } from '../lib/chordMatcher.js';
-import { autoCorrelate, frequencyToNoteInfo, frequencyToPitchClass } from '../lib/pitchDetection.js';
+import {
+  appendSimilarity,
+  computeChromaFromFrequencyData,
+  cosineSimilarity,
+  createSimilarityHistory,
+  decayChroma,
+  detectBestChord,
+  makeChordTemplate,
+  smoothChroma,
+} from '../lib/chordAnalysis.js';
+import {
+  appendRhythm,
+  averageAccuracy,
+  computeBeatPosition,
+  computeRhythmAccuracy,
+  createRhythmHistory,
+  detectOnset,
+} from '../lib/rhythmAnalysis.js';
+import {
+  buildEmptyChroma,
+  classifySignal,
+  computeHarmonicity,
+  computeRms,
+  computeSpectralFlux,
+  createMagnitudeFromDb,
+  smoothValue,
+} from '../lib/signalQualification.js';
 
-const WINDOW_MS = 1400;
-const PITCH_HISTORY_POINTS = 120;
-const MIN_GUITAR_FREQUENCY = 70;
-const MAX_GUITAR_FREQUENCY = 420;
-const MIN_SIGNAL_RMS = 0.01;
-const MIN_SPECTRUM_PEAK = 0.12;
-const NOISE_FLOOR_ALPHA = 0.035;
+const SIMILARITY_HISTORY_POINTS = 120;
+const RHYTHM_HISTORY_POINTS = 120;
+const CHORD_THRESHOLD = 0.7;
+const RHYTHM_THRESHOLD = 0.7;
 
-function createEmptyPitchHistory() {
-  return new Array(PITCH_HISTORY_POINTS).fill(null);
-}
-
-function createEmptyChroma() {
-  return new Array(12).fill(0);
-}
-
-function computeRms(samples) {
-  let energy = 0;
-  for (let index = 0; index < samples.length; index += 1) {
-    energy += samples[index] * samples[index];
-  }
-  return Math.sqrt(energy / samples.length);
-}
-
-function sampleSpectrumPeak(frequencyData, sampleRate, maxFrequency = 800) {
-  const nyquist = sampleRate / 2;
-  const maxIndex = Math.max(1, Math.floor((maxFrequency / nyquist) * frequencyData.length));
-  let peak = 0;
-
-  for (let index = 0; index < maxIndex && index < frequencyData.length; index += 1) {
-    peak = Math.max(peak, frequencyData[index] / 255);
-  }
-
-  return peak;
-}
-
-function appendPitch(previous, nextValue) {
-  return [...previous.slice(1), nextValue];
-}
-
-function applyNoiseGate(samples, threshold) {
-  return samples.map((sample) => (Math.abs(sample) < threshold ? 0 : sample));
-}
-
-function buildChromaStrengths(activity) {
-  if (!activity.length) return createEmptyChroma();
-
-  const counts = new Array(12).fill(0);
-  for (let index = 0; index < activity.length; index += 1) {
-    counts[activity[index].pitchClass] += 1;
-  }
-
-  const peak = Math.max(...counts, 1);
-  return counts.map((count) => count / peak);
-}
-
-function mapPermissionState(value) {
-  if (value === 'granted' || value === 'denied' || value === 'prompt') {
-    return value;
-  }
-  return 'idle';
-}
-
-export function useAudioMatcher(expectedPitchClasses) {
+export function useAudioMatcher({ expectedPitchClasses, currentChordName, capo, bpm, pattern }) {
   const [permissionState, setPermissionState] = useState('idle');
   const [supported, setSupported] = useState(true);
   const [hearing, setHearing] = useState(false);
-  const [pitchHistory, setPitchHistory] = useState(createEmptyPitchHistory);
-  const [chromaStrengths, setChromaStrengths] = useState(createEmptyChroma);
-  const [detectedFrequency, setDetectedFrequency] = useState(null);
-  const [noteInfo, setNoteInfo] = useState(null);
-  const [result, setResult] = useState({
-    isMatch: false,
-    confidence: 0,
-    matchRatio: 0,
-    noiseRatio: 1,
-    heardPitchClasses: [],
-  });
+  const [signalQuality, setSignalQuality] = useState({ label: 'No signal', tone: 'off', silent: true });
+  const [chordSimilarity, setChordSimilarity] = useState(0);
+  const [chordHistory, setChordHistory] = useState(() => createSimilarityHistory(SIMILARITY_HISTORY_POINTS));
+  const [chromaStrengths, setChromaStrengths] = useState(buildEmptyChroma);
+  const [detectedChord, setDetectedChord] = useState({ name: '—', similarity: 0 });
+  const [rhythmHistory, setRhythmHistory] = useState(() => createRhythmHistory(RHYTHM_HISTORY_POINTS));
+  const [activeBeat, setActiveBeat] = useState(null);
+  const [rhythmMetrics, setRhythmMetrics] = useState({ last: null, average: null, strums: 0 });
 
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const sourceRef = useRef(null);
   const streamRef = useRef(null);
-  const highpassRef = useRef(null);
-  const lowpassRef = useRef(null);
-  const compressorRef = useRef(null);
   const frameRef = useRef(0);
-  const activityRef = useRef([]);
-  const lastDetectionRef = useRef(0);
-  const ambientRmsRef = useRef(MIN_SIGNAL_RMS * 0.6);
-  const ambientPeakRef = useRef(MIN_SPECTRUM_PEAK * 0.5);
+  const permissionStatusRef = useRef(null);
+  const previousMagnitudeRef = useRef(null);
+  const fluxBufferRef = useRef([]);
+  const smoothedRmsRef = useRef(0);
+  const smoothedChromaRef = useRef(buildEmptyChroma());
+  const lastOnsetTimeRef = useRef(-1);
+  const lastStrumTimeRef = useRef(-1);
+  const rhythmReferenceRef = useRef(null);
+  const accuracyBufferRef = useRef([]);
+  const rhythmHistoryRef = useRef(createRhythmHistory(RHYTHM_HISTORY_POINTS));
+  const totalStrumsRef = useRef(0);
 
   useEffect(() => {
     let mounted = true;
-    let permissionStatus = null;
 
     async function detectSupportAndPermission() {
       const hasAudioContext = window.AudioContext || window.webkitAudioContext;
@@ -117,11 +84,12 @@ export function useAudioMatcher(expectedPitchClasses) {
       }
 
       try {
-        permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+        const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+        permissionStatusRef.current = permissionStatus;
         if (!mounted) return;
-        setPermissionState(mapPermissionState(permissionStatus.state));
+        setPermissionState(permissionStatus.state);
         permissionStatus.onchange = () => {
-          setPermissionState(mapPermissionState(permissionStatus.state));
+          setPermissionState(permissionStatus.state);
         };
       } catch {
         if (mounted) {
@@ -134,23 +102,11 @@ export function useAudioMatcher(expectedPitchClasses) {
 
     return () => {
       mounted = false;
-      if (permissionStatus) {
-        permissionStatus.onchange = null;
+      if (permissionStatusRef.current) {
+        permissionStatusRef.current.onchange = null;
       }
     };
   }, []);
-
-  useEffect(() => {
-    if (!expectedPitchClasses.length) {
-      setResult({
-        isMatch: false,
-        confidence: 0,
-        matchRatio: 0,
-        noiseRatio: 1,
-        heardPitchClasses: [],
-      });
-    }
-  }, [expectedPitchClasses]);
 
   useEffect(() => {
     function handleVisibilityChange() {
@@ -173,6 +129,39 @@ export function useAudioMatcher(expectedPitchClasses) {
     };
   }, []);
 
+  useEffect(() => {
+    smoothedChromaRef.current = buildEmptyChroma();
+    setChordSimilarity(0);
+    setChordHistory(createSimilarityHistory(SIMILARITY_HISTORY_POINTS));
+    setDetectedChord({ name: currentChordName || '—', similarity: 0 });
+  }, [currentChordName, expectedPitchClasses]);
+
+  useEffect(() => {
+    rhythmHistoryRef.current = rhythmHistory;
+  }, [rhythmHistory]);
+
+  function resetAnalysisState() {
+    setSignalQuality({ label: 'No signal', tone: 'off', silent: true });
+    setChordSimilarity(0);
+    setChordHistory(createSimilarityHistory(SIMILARITY_HISTORY_POINTS));
+    setChromaStrengths(buildEmptyChroma());
+    setDetectedChord({ name: currentChordName || '—', similarity: 0 });
+    setRhythmHistory(createRhythmHistory(RHYTHM_HISTORY_POINTS));
+    setActiveBeat(null);
+    setRhythmMetrics({ last: null, average: null, strums: 0 });
+
+    previousMagnitudeRef.current = null;
+    fluxBufferRef.current = [];
+    smoothedRmsRef.current = 0;
+    smoothedChromaRef.current = buildEmptyChroma();
+    lastOnsetTimeRef.current = -1;
+    lastStrumTimeRef.current = -1;
+    rhythmReferenceRef.current = null;
+    accuracyBufferRef.current = [];
+    totalStrumsRef.current = 0;
+    rhythmHistoryRef.current = createRhythmHistory(RHYTHM_HISTORY_POINTS);
+  }
+
   async function requestPermission() {
     if (!supported || !navigator.mediaDevices?.getUserMedia) {
       setSupported(false);
@@ -193,40 +182,15 @@ export function useAudioMatcher(expectedPitchClasses) {
       const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
       const context = new AudioContextCtor();
       const analyser = context.createAnalyser();
-      analyser.fftSize = 2048;
-      analyser.smoothingTimeConstant = 0.8;
-      analyser.minDecibels = -88;
-      analyser.maxDecibels = -12;
+      analyser.fftSize = 8192;
+      analyser.smoothingTimeConstant = 0.4;
 
       const source = context.createMediaStreamSource(stream);
-      const highpass = context.createBiquadFilter();
-      highpass.type = 'highpass';
-      highpass.frequency.value = 82;
-      highpass.Q.value = 0.8;
-
-      const lowpass = context.createBiquadFilter();
-      lowpass.type = 'lowpass';
-      lowpass.frequency.value = 950;
-      lowpass.Q.value = 0.9;
-
-      const compressor = context.createDynamicsCompressor();
-      compressor.threshold.value = -30;
-      compressor.knee.value = 18;
-      compressor.ratio.value = 8;
-      compressor.attack.value = 0.004;
-      compressor.release.value = 0.22;
-
-      source.connect(highpass);
-      highpass.connect(lowpass);
-      lowpass.connect(compressor);
-      compressor.connect(analyser);
+      source.connect(analyser);
 
       audioContextRef.current = context;
       analyserRef.current = analyser;
       sourceRef.current = source;
-      highpassRef.current = highpass;
-      lowpassRef.current = lowpass;
-      compressorRef.current = compressor;
       setPermissionState('granted');
       return true;
     } catch (error) {
@@ -239,110 +203,122 @@ export function useAudioMatcher(expectedPitchClasses) {
     }
   }
 
-  function resetDetectionState() {
-    setResult({
-      isMatch: false,
-      confidence: 0,
-      matchRatio: 0,
-      noiseRatio: 1,
-      heardPitchClasses: [],
-    });
-    setDetectedFrequency(null);
-    setNoteInfo(null);
-    setChromaStrengths(createEmptyChroma());
+  function lastRhythmValue() {
+    return rhythmHistoryRef.current[rhythmHistoryRef.current.length - 1] ?? 0;
   }
 
   function processFrame() {
     const analyser = analyserRef.current;
-    const context = audioContextRef.current;
-    if (!analyser || !context) return;
-
-    const timeData = new Float32Array(analyser.fftSize);
-    const frequencyData = new Uint8Array(analyser.frequencyBinCount);
-    analyser.getFloatTimeDomainData(timeData);
-    analyser.getByteFrequencyData(frequencyData);
-
-    const rawRms = computeRms(timeData);
-    const dynamicGate = Math.max(MIN_SIGNAL_RMS * 0.6, ambientRmsRef.current * 1.35);
-    const cleanedTimeData = applyNoiseGate(Array.from(timeData), dynamicGate);
-    const cleanedRms = computeRms(cleanedTimeData);
-    const spectrumPeak = sampleSpectrumPeak(frequencyData, context.sampleRate);
-    const now = performance.now();
-
-    activityRef.current = activityRef.current.filter((sample) => now - sample.time <= WINDOW_MS);
-
-    const activeSignal =
-      cleanedRms >= Math.max(MIN_SIGNAL_RMS, ambientRmsRef.current * 2.4) &&
-      spectrumPeak >= Math.max(MIN_SPECTRUM_PEAK, ambientPeakRef.current + 0.08);
-
-    if (!activeSignal) {
-      ambientRmsRef.current += (rawRms - ambientRmsRef.current) * NOISE_FLOOR_ALPHA;
-      ambientPeakRef.current += (spectrumPeak - ambientPeakRef.current) * NOISE_FLOOR_ALPHA;
-      setPitchHistory((previous) => appendPitch(previous, null));
-      setChromaStrengths(buildChromaStrengths(activityRef.current));
-
-      if (now - lastDetectionRef.current > WINDOW_MS) {
-        resetDetectionState();
-      }
-
-      frameRef.current = window.requestAnimationFrame(processFrame);
+    const audioContext = audioContextRef.current;
+    if (!analyser || !audioContext) {
       return;
     }
 
-    const frequency = autoCorrelate(cleanedTimeData, context.sampleRate);
-    const validFrequency =
-      Number.isFinite(frequency) && frequency >= MIN_GUITAR_FREQUENCY && frequency <= MAX_GUITAR_FREQUENCY
-        ? frequency
-        : null;
+    const frequencyData = new Float32Array(analyser.frequencyBinCount);
+    const timeData = new Float32Array(analyser.fftSize);
+    analyser.getFloatFrequencyData(frequencyData);
+    analyser.getFloatTimeDomainData(timeData);
 
-    if (validFrequency !== null) {
-      const pitchClass = frequencyToPitchClass(validFrequency);
-      if (pitchClass !== null) {
-        activityRef.current.push({ pitchClass, frequency: validFrequency, time: now });
-        lastDetectionRef.current = now;
-        setDetectedFrequency(validFrequency);
-        setNoteInfo(frequencyToNoteInfo(validFrequency));
+    const rawRms = computeRms(timeData);
+    smoothedRmsRef.current = smoothValue(smoothedRmsRef.current, rawRms, 0.85);
+
+    const harmonicity = computeHarmonicity(timeData, audioContext.sampleRate);
+    const quality = classifySignal({
+      smoothedRms: smoothedRmsRef.current,
+      harmonicity,
+      silentThreshold: 0.013,
+      harmonicThreshold: 0.3,
+    });
+    setSignalQuality(quality);
+
+    const magnitude = createMagnitudeFromDb(frequencyData);
+    const { flux, magnitude: nextMagnitude } = computeSpectralFlux(magnitude, previousMagnitudeRef.current);
+    previousMagnitudeRef.current = nextMagnitude;
+    fluxBufferRef.current.push(flux);
+    if (fluxBufferRef.current.length > 20) {
+      fluxBufferRef.current.shift();
+    }
+    const fluxAverage = fluxBufferRef.current.length
+      ? fluxBufferRef.current.reduce((total, value) => total + value, 0) / fluxBufferRef.current.length
+      : 0;
+
+    const currentTime = audioContext.currentTime;
+    const onset = detectOnset({
+      silent: quality.silent,
+      flux,
+      fluxAverage,
+      currentTime,
+      lastOnsetTime: lastOnsetTimeRef.current,
+    });
+
+    if (!quality.silent) {
+      const rawChroma = computeChromaFromFrequencyData(frequencyData, audioContext.sampleRate, analyser.fftSize);
+      smoothedChromaRef.current = smoothChroma(smoothedChromaRef.current, rawChroma);
+    } else {
+      smoothedChromaRef.current = decayChroma(smoothedChromaRef.current);
+    }
+
+    const template = makeChordTemplate(expectedPitchClasses);
+    const similarity = quality.silent ? 0 : Math.max(0, cosineSimilarity(smoothedChromaRef.current, template));
+    const bestChord = quality.silent ? { name: currentChordName || '—', similarity: 0 } : detectBestChord(smoothedChromaRef.current, capo);
+
+    setChordSimilarity(similarity);
+    setDetectedChord(bestChord);
+    setChromaStrengths(smoothedChromaRef.current);
+    setChordHistory((previous) => appendSimilarity(previous, similarity));
+
+    if (!rhythmReferenceRef.current && onset) {
+      rhythmReferenceRef.current = currentTime;
+    }
+
+    if (onset) {
+      lastOnsetTimeRef.current = currentTime;
+      lastStrumTimeRef.current = currentTime;
+      const accuracy = computeRhythmAccuracy({
+        currentTime,
+        referenceTime: rhythmReferenceRef.current,
+        bpm,
+        pattern,
+      });
+      accuracyBufferRef.current.push(accuracy);
+      if (accuracyBufferRef.current.length > 50) {
+        accuracyBufferRef.current.shift();
       }
+      totalStrumsRef.current += 1;
+      setRhythmMetrics({
+        last: accuracy,
+        average: averageAccuracy(accuracyBufferRef.current),
+        strums: totalStrumsRef.current,
+      });
+      setRhythmHistory((previous) => appendRhythm(previous, accuracy));
+    } else {
+      const inactiveFor = lastStrumTimeRef.current < 0 ? Number.POSITIVE_INFINITY : currentTime - lastStrumTimeRef.current;
+      const nextValue = inactiveFor > ((60 / bpm) * 4) * 1.5 ? Math.max(0, lastRhythmValue() * 0.97) : lastRhythmValue();
+      setRhythmHistory((previous) => appendRhythm(previous, nextValue));
     }
 
-    activityRef.current = activityRef.current.filter((sample) => now - sample.time <= WINDOW_MS);
-    setChromaStrengths(buildChromaStrengths(activityRef.current));
+    const beatPosition = computeBeatPosition({ currentTime, referenceTime: rhythmReferenceRef.current, bpm });
+    setActiveBeat(beatPosition === null ? null : Math.floor(beatPosition) % 8);
 
-    if (activityRef.current.length >= 4) {
-      const counts = activityRef.current.reduce((accumulator, sample) => {
-        accumulator[sample.pitchClass] = (accumulator[sample.pitchClass] || 0) + 1;
-        return accumulator;
-      }, {});
-
-      const dominantPitchClasses = Object.entries(counts)
-        .filter(([, count]) => count >= 2)
-        .sort((left, right) => right[1] - left[1])
-        .slice(0, 4)
-        .map(([pitchClassValue]) => Number(pitchClassValue));
-
-      setResult(evaluateChordMatch(dominantPitchClasses, expectedPitchClasses));
-    } else if (now - lastDetectionRef.current > WINDOW_MS) {
-      resetDetectionState();
-    }
-
-    setPitchHistory((previous) => appendPitch(previous, validFrequency));
     frameRef.current = window.requestAnimationFrame(processFrame);
   }
 
   async function startListening() {
+    if (hearing) {
+      return true;
+    }
+
     const granted = permissionState === 'granted' ? true : await requestPermission();
-    if (!granted) return false;
+    if (!granted) {
+      return false;
+    }
 
     if (audioContextRef.current?.state === 'suspended') {
       await audioContextRef.current.resume();
     }
 
+    resetAnalysisState();
     setHearing(true);
-    activityRef.current = [];
-    ambientRmsRef.current = MIN_SIGNAL_RMS * 0.6;
-    ambientPeakRef.current = MIN_SPECTRUM_PEAK * 0.5;
-    setPitchHistory(createEmptyPitchHistory());
-    setChromaStrengths(createEmptyChroma());
     frameRef.current = window.requestAnimationFrame(processFrame);
     return true;
   }
@@ -359,21 +335,6 @@ export function useAudioMatcher(expectedPitchClasses) {
       sourceRef.current = null;
     }
 
-    if (highpassRef.current) {
-      highpassRef.current.disconnect();
-      highpassRef.current = null;
-    }
-
-    if (lowpassRef.current) {
-      lowpassRef.current.disconnect();
-      lowpassRef.current = null;
-    }
-
-    if (compressorRef.current) {
-      compressorRef.current.disconnect();
-      compressorRef.current = null;
-    }
-
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -385,25 +346,26 @@ export function useAudioMatcher(expectedPitchClasses) {
     }
 
     analyserRef.current = null;
-    setPitchHistory(createEmptyPitchHistory());
-    setDetectedFrequency(null);
-    setNoteInfo(null);
-    setChromaStrengths(createEmptyChroma());
-    setPermissionState((current) => (current === 'unsupported' ? current : 'prompt'));
+    resetAnalysisState();
+    setPermissionState((current) => (current === 'unsupported' || current === 'denied' ? current : 'granted'));
   }
 
   return {
     supported,
     permissionState,
     hearing,
-    result,
-    detectedFrequency,
-    noteInfo,
-    pitchHistory,
+    signalQuality,
+    chordSimilarity,
+    chordThreshold: CHORD_THRESHOLD,
+    chordHistory,
     chromaStrengths,
+    detectedChord,
+    rhythmHistory,
+    rhythmThreshold: RHYTHM_THRESHOLD,
+    activeBeat,
+    rhythmMetrics,
     requestPermission,
     startListening,
     stopListening,
   };
 }
-
