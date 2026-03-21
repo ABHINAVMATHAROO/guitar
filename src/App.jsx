@@ -409,6 +409,12 @@ export default function App() {
     }
 
     if (!supported) {
+      window.alert('This browser does not support microphone access for the app.');
+      return;
+    }
+
+    if (permissionState === 'denied') {
+      window.alert('Microphone access is blocked for this site. Open your browser site settings and allow microphone access, then try again.');
       return;
     }
 
@@ -570,6 +576,7 @@ export default function App() {
     </main>
   );
 }
+
 
 
 

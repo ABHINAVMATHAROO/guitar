@@ -58,6 +58,13 @@ function buildChromaStrengths(activity) {
   return counts.map((count) => count / peak);
 }
 
+function mapPermissionState(value) {
+  if (value === 'granted' || value === 'denied' || value === 'prompt') {
+    return value;
+  }
+  return 'idle';
+}
+
 export function useAudioMatcher(expectedPitchClasses) {
   const [permissionState, setPermissionState] = useState('idle');
   const [supported, setSupported] = useState(true);
@@ -88,10 +95,49 @@ export function useAudioMatcher(expectedPitchClasses) {
   const ambientPeakRef = useRef(MIN_SPECTRUM_PEAK * 0.5);
 
   useEffect(() => {
-    if (!window.AudioContext && !window.webkitAudioContext) {
-      setSupported(false);
-      setPermissionState('unsupported');
+    let mounted = true;
+    let permissionStatus = null;
+
+    async function detectSupportAndPermission() {
+      const hasAudioContext = window.AudioContext || window.webkitAudioContext;
+      const hasMediaDevices = Boolean(navigator.mediaDevices?.getUserMedia);
+
+      if (!hasAudioContext || !hasMediaDevices) {
+        if (!mounted) return;
+        setSupported(false);
+        setPermissionState('unsupported');
+        return;
+      }
+
+      if (!navigator.permissions?.query) {
+        if (mounted) {
+          setPermissionState('prompt');
+        }
+        return;
+      }
+
+      try {
+        permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+        if (!mounted) return;
+        setPermissionState(mapPermissionState(permissionStatus.state));
+        permissionStatus.onchange = () => {
+          setPermissionState(mapPermissionState(permissionStatus.state));
+        };
+      } catch {
+        if (mounted) {
+          setPermissionState('prompt');
+        }
+      }
     }
+
+    detectSupportAndPermission();
+
+    return () => {
+      mounted = false;
+      if (permissionStatus) {
+        permissionStatus.onchange = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -113,7 +159,11 @@ export function useAudioMatcher(expectedPitchClasses) {
   }, []);
 
   async function requestPermission() {
-    if (!supported) return false;
+    if (!supported || !navigator.mediaDevices?.getUserMedia) {
+      setSupported(false);
+      setPermissionState('unsupported');
+      return false;
+    }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -164,8 +214,12 @@ export function useAudioMatcher(expectedPitchClasses) {
       compressorRef.current = compressor;
       setPermissionState('granted');
       return true;
-    } catch {
-      setPermissionState('denied');
+    } catch (error) {
+      if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
+        setPermissionState('denied');
+      } else {
+        setPermissionState('prompt');
+      }
       return false;
     }
   }
@@ -262,7 +316,7 @@ export function useAudioMatcher(expectedPitchClasses) {
 
   async function startListening() {
     const granted = permissionState === 'granted' ? true : await requestPermission();
-    if (!granted) return;
+    if (!granted) return false;
 
     if (audioContextRef.current?.state === 'suspended') {
       await audioContextRef.current.resume();
@@ -275,6 +329,7 @@ export function useAudioMatcher(expectedPitchClasses) {
     setPitchHistory(createEmptyPitchHistory());
     setChromaStrengths(createEmptyChroma());
     frameRef.current = window.requestAnimationFrame(processFrame);
+    return true;
   }
 
   function stopListening() {
@@ -319,7 +374,7 @@ export function useAudioMatcher(expectedPitchClasses) {
     setDetectedFrequency(null);
     setNoteInfo(null);
     setChromaStrengths(createEmptyChroma());
-    setPermissionState((current) => (current === 'unsupported' ? current : 'idle'));
+    setPermissionState((current) => (current === 'unsupported' ? current : 'prompt'));
   }
 
   return {
