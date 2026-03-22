@@ -2,15 +2,20 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useAudioMatcher } from './hooks/useAudioMatcher.js';
 import { noteLabels } from './lib/chordAnalysis.js';
 import { NOTE_NAMES, clampCapo, parseChordName } from './lib/music.js';
-import { RHYTHM_PRESETS } from './lib/rhythmAnalysis.js';
+import { createDefaultPattern, getSubdivisionConfig, normalizePattern } from './lib/rhythmAnalysis.js';
 
 const STORAGE_KEY = 'guitar-cafe-trainer:settings';
 const PICKER_ITEM_HEIGHT = 46;
 const TEMPO_GROUP = 'tempo';
+const STRUM_GROUP = 'strum';
 const CHORD_GROUPS = ['chords-a', 'chords-b'];
 const CAPO_OPTIONS = Array.from({ length: 13 }, (_, index) => ({ value: index, label: `${index}` }));
 const BPM_OPTIONS = Array.from({ length: 181 }, (_, index) => ({ value: index + 40, label: `${index + 40}` }));
 const ROOT_OPTIONS = NOTE_NAMES.map((note) => ({ value: note, label: note }));
+const SUBDIVISION_OPTIONS = [
+  { value: 'eighth', label: '8th' },
+  { value: 'triplet', label: 'triplet' },
+];
 const QUALITY_OPTIONS = [
   { value: '', label: 'maj' },
   { value: 'm', label: 'min' },
@@ -21,12 +26,13 @@ const QUALITY_OPTIONS = [
   { value: 'sus4', label: 'sus4' },
 ];
 const ASSET_BASE = import.meta.env.BASE_URL;
-const PATTERN_LABELS = ['1', '&', '2', '&', '3', '&', '4', '&'];
 
 const defaultSettings = {
   capo: 0,
   bpm: 72,
   mode: 'auto',
+  subdivision: 'eighth',
+  pattern: createDefaultPattern('eighth'),
   chords: [
     { root: 'G', quality: '' },
     { root: 'D', quality: '' },
@@ -41,9 +47,12 @@ function loadSettings() {
 
   try {
     const parsed = JSON.parse(saved);
+    const subdivision = parsed.subdivision ?? defaultSettings.subdivision;
     return {
       ...defaultSettings,
       ...parsed,
+      subdivision,
+      pattern: normalizePattern(parsed.pattern, subdivision),
       chords: Array.isArray(parsed.chords) && parsed.chords.length === 4 ? parsed.chords : defaultSettings.chords,
     };
   } catch {
@@ -69,6 +78,18 @@ function buildHistoryPath(data) {
       return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
     })
     .join(' ');
+}
+
+function patternSymbol(step) {
+  if (step === 1) return 'D';
+  if (step === -1) return 'U';
+  return '-';
+}
+
+function cyclePatternStep(step) {
+  if (step === 0) return 1;
+  if (step === 1) return -1;
+  return 0;
 }
 
 function HistoryChart({ history, threshold, title, detail, statusText, statusTone, compact = false }) {
@@ -214,12 +235,12 @@ function WheelScroller({ label, options, value, onChange, autoClose = false, onD
   );
 }
 
-function SummaryPicker({ label, summary, options, value, isOpen, onToggle, onChange, children }) {
+function SummaryPicker({ label, summary, options, value, isOpen, onToggle, onChange, children, fullWidth = false }) {
   const panelId = useId();
   const selectedOption = summary ?? options?.find((option) => option.value === value)?.label ?? value;
 
   return (
-    <div className={isOpen ? 'picker open' : 'picker'}>
+    <div className={[isOpen ? 'picker open' : 'picker', fullWidth ? 'picker-full' : ''].filter(Boolean).join(' ')}>
       <span className="picker-label">{label}</span>
       <button type="button" className={isOpen ? 'picker-summary active' : 'picker-summary'} aria-expanded={isOpen} aria-controls={panelId} onClick={onToggle}>
         {selectedOption}
@@ -239,25 +260,24 @@ export default function App() {
   const [openGroup, setOpenGroup] = useState(null);
   const [setupCollapsed, setSetupCollapsed] = useState(false);
   const [suppressPanelTransitions, setSuppressPanelTransitions] = useState(false);
-  const [patternPreset, setPatternPreset] = useState('quarter');
-  const [pattern, setPattern] = useState([...RHYTHM_PRESETS.quarter]);
 
   const capo = clampCapo(settings.capo);
   const bpm = Math.max(40, Math.min(220, Number.parseInt(settings.bpm, 10) || 72));
   const progression = useMemo(() => settings.chords.map((chord) => parseChordName(`${chord.root}${chord.quality}`, capo)), [settings.chords, capo]);
   const progressionLabel = settings.chords.map((chord) => `${chord.root}${chord.quality || ''}`).join(' - ');
   const currentChord = progression[activeIndex] ?? progression[0];
+  const subdivisionConfig = useMemo(() => getSubdivisionConfig(settings.subdivision), [settings.subdivision]);
+  const patternLabels = subdivisionConfig.labels;
 
   const {
     supported,
     permissionState,
     hearing,
     signalQuality,
-    chordSimilarity,
+    latchedChordSimilarity,
     chordThreshold,
     chordHistory,
     chromaStrengths,
-    detectedChord,
     rhythmHistory,
     rhythmThreshold,
     activeBeat,
@@ -270,12 +290,22 @@ export default function App() {
     currentChordName: currentChord?.raw ?? '',
     capo,
     bpm,
-    pattern,
+    pattern: settings.pattern,
   });
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ capo, bpm, mode: settings.mode, chords: settings.chords }));
-  }, [capo, bpm, settings.mode, settings.chords]);
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        capo,
+        bpm,
+        mode: settings.mode,
+        subdivision: settings.subdivision,
+        pattern: settings.pattern,
+        chords: settings.chords,
+      }),
+    );
+  }, [capo, bpm, settings.mode, settings.subdivision, settings.pattern, settings.chords]);
 
   useEffect(() => {
     if (!suppressPanelTransitions) return undefined;
@@ -293,14 +323,39 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [settings.mode, bpm, progression.length, hearing]);
 
+  function stopPracticeForSetupEdit() {
+    if (hearing) {
+      stopListening();
+    }
+  }
+
   function updateSetting(key, value) {
+    stopPracticeForSetupEdit();
     setSettings((current) => ({ ...current, [key]: value }));
   }
 
   function updateChord(slotIndex, key, value) {
+    stopPracticeForSetupEdit();
     setSettings((current) => ({
       ...current,
       chords: current.chords.map((chord, index) => (index === slotIndex ? { ...chord, [key]: value } : chord)),
+    }));
+  }
+
+  function updateSubdivision(subdivision) {
+    stopPracticeForSetupEdit();
+    setSettings((current) => ({
+      ...current,
+      subdivision,
+      pattern: createDefaultPattern(subdivision),
+    }));
+  }
+
+  function togglePatternStep(index) {
+    stopPracticeForSetupEdit();
+    setSettings((current) => ({
+      ...current,
+      pattern: current.pattern.map((value, patternIndex) => (patternIndex === index ? cyclePatternStep(value) : value)),
     }));
   }
 
@@ -350,29 +405,15 @@ export default function App() {
     setActiveIndex((current) => (current + 1) % progression.length);
   }
 
-  function handlePresetChange(event) {
-    const preset = event.target.value;
-    setPatternPreset(preset);
-    setPattern([...(RHYTHM_PRESETS[preset] ?? RHYTHM_PRESETS.quarter)]);
-  }
-
-  function togglePatternStep(index) {
-    setPattern((current) => current.map((value, patternIndex) => (patternIndex === index ? (value ? 0 : 1) : value)));
-    setPatternPreset('custom');
-  }
-
-  function resetRhythmPattern() {
-    setPatternPreset('quarter');
-    setPattern([...(RHYTHM_PRESETS.quarter)]);
-  }
-
   const showCollapsedSetup = setupCollapsed;
   const micPillLabel = hearing ? 'LISTENING' : permissionState === 'granted' ? 'READY' : 'MIC OFF';
   const autoMode = settings.mode === 'auto';
-  const chordTone = chordSimilarity >= chordThreshold ? 'good' : chordSimilarity >= 0.45 ? 'close' : 'off';
-  const chordStatus = chordSimilarity >= chordThreshold ? 'CORRECT' : chordSimilarity >= 0.45 ? 'CLOSE' : 'OFF';
+  const displayedChordSimilarity = latchedChordSimilarity;
+  const chordTone = displayedChordSimilarity >= chordThreshold ? 'good' : displayedChordSimilarity >= 0.65 ? 'close' : 'off';
+  const chordStatus = displayedChordSimilarity >= chordThreshold ? 'CORRECT' : displayedChordSimilarity >= 0.65 ? 'CLOSE' : 'OFF';
   const rhythmTone = (rhythmMetrics.last ?? 0) >= rhythmThreshold ? 'good' : (rhythmMetrics.last ?? 0) >= 0.45 ? 'close' : 'off';
   const rhythmStatus = rhythmMetrics.last === null ? 'WAITING' : formatPercent(rhythmMetrics.last);
+  const activeStrums = settings.pattern.filter((step) => step !== 0).length;
 
   return (
     <main className="shell">
@@ -399,6 +440,7 @@ export default function App() {
             <span>{progressionLabel}</span>
             <span>Capo : {capo}</span>
             <span>BPM : {bpm}</span>
+            <span>Strum : {subdivisionConfig.label}</span>
           </p>
         ) : (
           <>
@@ -424,6 +466,29 @@ export default function App() {
                   </SummaryPicker>
                 );
               })}
+            </div>
+
+            <div className="strum-section">
+              <SummaryPicker
+                label="strum"
+                options={SUBDIVISION_OPTIONS}
+                value={settings.subdivision}
+                summary={`${subdivisionConfig.label} | ${activeStrums} strokes`}
+                isOpen={openGroup === STRUM_GROUP}
+                onToggle={() => toggleGroup(STRUM_GROUP)}
+                fullWidth
+              >
+                <WheelScroller label="subdivision" options={SUBDIVISION_OPTIONS} value={settings.subdivision} onChange={updateSubdivision} />
+              </SummaryPicker>
+
+              <div className="strum-editor" style={{ gridTemplateColumns: `repeat(${patternLabels.length}, minmax(0, 1fr))` }}>
+                {patternLabels.map((label, index) => (
+                  <button key={`strum-${label}-${index}`} type="button" className={settings.pattern[index] === 0 ? 'strum-step' : 'strum-step active'} onClick={() => togglePatternStep(index)}>
+                    <span className="strum-slot-label">{label}</span>
+                    <span className="strum-slot-symbol">{patternSymbol(settings.pattern[index])}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="practice-slot">
@@ -461,7 +526,7 @@ export default function App() {
           history={chordHistory}
           threshold={chordThreshold}
           title=""
-          detail={`Similarity ${formatPercent(chordSimilarity)}`}
+          detail={`Similarity ${formatPercent(displayedChordSimilarity)}`}
           statusText={chordStatus}
           statusTone={chordTone}
           compact
@@ -470,42 +535,24 @@ export default function App() {
         <ChromaStrip expectedPitchClasses={currentChord.pitchClasses} chromaStrengths={chromaStrengths} />
 
         <div className="rhythm-panel">
-          <div className="rhythm-toolbar">
-            <div className="rhythm-inline">
-              <span className="picker-label">Pattern</span>
-              <select className="rhythm-select" value={patternPreset} onChange={handlePresetChange}>
-                <option value="quarter">Quarter notes</option>
-                <option value="eighth">Eighth notes</option>
-                <option value="ddu">D D DU</option>
-                <option value="dduudu">D DU UDU</option>
-                <option value="reggae">Reggae off-beats</option>
-                <option value="custom">Custom</option>
-              </select>
-            </div>
-            <button type="button" className="secondary-action" onClick={resetRhythmPattern}>Reset</button>
-          </div>
-
-          <div className="pattern-row">
-            {pattern.map((value, index) => (
-              <button key={`pattern-${PATTERN_LABELS[index]}`} type="button" className={value ? 'pattern-cell on' : 'pattern-cell'} onClick={() => togglePatternStep(index)}>
-                {PATTERN_LABELS[index]}
-              </button>
-            ))}
-          </div>
-
-          <div className="beat-row">
-            {PATTERN_LABELS.map((label, index) => (
-              <div key={`beat-${label}`} className={activeBeat === index ? 'beat-pip active' : 'beat-pip'} />
+          <div className="beat-row" style={{ gridTemplateColumns: `repeat(${patternLabels.length}, minmax(0, 1fr))` }}>
+            {patternLabels.map((label, index) => (
+              <div key={`beat-${label}-${index}`} className="beat-cell">
+                <span className="beat-label">{label}</span>
+                <div className={activeBeat === index ? 'beat-pip active' : 'beat-pip'} />
+                <span className={settings.pattern[index] === 0 ? 'beat-direction muted' : 'beat-direction'}>{patternSymbol(settings.pattern[index])}</span>
+              </div>
             ))}
           </div>
 
           <HistoryChart
             history={rhythmHistory}
             threshold={rhythmThreshold}
-            title="Strumming rhythm"
-            detail={`Signal ${signalQuality.label} • ${rhythmMetrics.strums} strums`}
-            statusText={rhythmStatus}
+            title=""
+            detail=""
+            statusText=""
             statusTone={rhythmTone}
+            compact
           />
 
           <div className="metric-grid">
@@ -527,6 +574,7 @@ export default function App() {
     </main>
   );
 }
+
 
 
 

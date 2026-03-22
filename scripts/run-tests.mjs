@@ -5,7 +5,10 @@ import {
   averageAccuracy,
   computeBeatPosition,
   computeRhythmAccuracy,
+  createDefaultPattern,
   detectOnset,
+  getSubdivisionConfig,
+  normalizePattern,
 } from '../src/lib/rhythmAnalysis.js';
 import {
   clampCapo,
@@ -136,6 +139,20 @@ const tests = [
     },
   },
   {
+    name: 'subdivision config exposes expected step labels',
+    run() {
+      assert.equal(getSubdivisionConfig('eighth').labels.length, 8);
+      assert.equal(getSubdivisionConfig('triplet').labels.length, 12);
+    },
+  },
+  {
+    name: 'normalizePattern reshapes invalid saved patterns to subdivision defaults',
+    run() {
+      const pattern = normalizePattern([1, 0, 1], 'triplet');
+      assert.deepEqual(pattern, createDefaultPattern('triplet'));
+    },
+  },
+  {
     name: 'detectOnset respects silence and cooldown thresholds',
     run() {
       assert.equal(detectOnset({ silent: true, flux: 4, fluxAverage: 1, currentTime: 1, lastOnsetTime: 0 }), false);
@@ -144,16 +161,17 @@ const tests = [
     },
   },
   {
-    name: 'computeBeatPosition maps time into the eight-step bar grid',
+    name: 'computeBeatPosition maps time into the configured step grid',
     run() {
-      nearlyEqual(computeBeatPosition({ currentTime: 0.25, referenceTime: 0, bpm: 120 }), 1);
-      nearlyEqual(computeBeatPosition({ currentTime: 1.0, referenceTime: 0, bpm: 120 }), 4);
+      nearlyEqual(computeBeatPosition({ currentTime: 0.25, referenceTime: 0, bpm: 120, patternLength: 8 }), 1);
+      nearlyEqual(computeBeatPosition({ currentTime: 1.0, referenceTime: 0, bpm: 120, patternLength: 8 }), 4);
+      nearlyEqual(computeBeatPosition({ currentTime: 0.5, referenceTime: 0, bpm: 120, patternLength: 12 }), 3);
     },
   },
   {
     name: 'computeRhythmAccuracy rewards on-time strums more than off-time strums',
     run() {
-      const pattern = [1, 0, 1, 0, 1, 0, 1, 0];
+      const pattern = [1, 0, -1, 1, 0, -1, 1, 0];
       const perfect = computeRhythmAccuracy({ currentTime: 0.5, referenceTime: 0, bpm: 120, pattern });
       const late = computeRhythmAccuracy({ currentTime: 0.62, referenceTime: 0, bpm: 120, pattern });
       assert.ok(perfect > late);

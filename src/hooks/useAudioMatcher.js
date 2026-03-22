@@ -172,6 +172,49 @@ export function useAudioMatcher({ expectedPitchClasses, currentChordName, capo, 
     chordWindowRef.current = null;
   }
 
+  function detachStreamHandlers(stream) {
+    if (!stream) return;
+    stream.oninactive = null;
+    stream.getTracks().forEach((track) => {
+      track.onended = null;
+      track.onmute = null;
+      track.onunmute = null;
+    });
+  }
+
+  function stopListening() {
+    setHearing(false);
+    if (frameRef.current) {
+      window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = 0;
+    }
+
+    if (sourceRef.current) {
+      sourceRef.current.disconnect();
+      sourceRef.current = null;
+    }
+
+    if (streamRef.current) {
+      detachStreamHandlers(streamRef.current);
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    if (audioContextRef.current) {
+      audioContextRef.current.onstatechange = null;
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+
+    analyserRef.current = null;
+    resetAnalysisState();
+    setPermissionState((current) => (current === 'unsupported' || current === 'denied' ? current : 'granted'));
+  }
+
+  function handleExternalStreamStop() {
+    stopListening();
+  }
+
   async function requestPermission() {
     if (!supported || !navigator.mediaDevices?.getUserMedia) {
       setSupported(false);
@@ -188,16 +231,33 @@ export function useAudioMatcher({ expectedPitchClasses, currentChordName, capo, 
         },
       });
 
-      streamRef.current = stream;
       const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
       const context = new AudioContextCtor();
       const analyser = context.createAnalyser();
       analyser.fftSize = 8192;
-      analyser.smoothingTimeConstant = 0.4;
+      analyser.smoothingTimeConstant = 0.08;
 
       const source = context.createMediaStreamSource(stream);
       source.connect(analyser);
 
+      stream.oninactive = handleExternalStreamStop;
+      stream.getTracks().forEach((track) => {
+        track.onended = handleExternalStreamStop;
+        track.onmute = () => {
+          if (!track.enabled || track.muted || track.readyState === 'ended') {
+            handleExternalStreamStop();
+          }
+        };
+        track.onunmute = null;
+      });
+
+      context.onstatechange = () => {
+        if (context.state === 'closed' || context.state === 'interrupted') {
+          handleExternalStreamStop();
+        }
+      };
+
+      streamRef.current = stream;
       audioContextRef.current = context;
       analyserRef.current = analyser;
       sourceRef.current = source;
@@ -228,7 +288,9 @@ export function useAudioMatcher({ expectedPitchClasses, currentChordName, capo, 
   function processFrame() {
     const analyser = analyserRef.current;
     const audioContext = audioContextRef.current;
-    if (!analyser || !audioContext) {
+    const stream = streamRef.current;
+    if (!analyser || !audioContext || !stream || !stream.active || audioContext.state === 'closed') {
+      handleExternalStreamStop();
       return;
     }
 
@@ -334,8 +396,8 @@ export function useAudioMatcher({ expectedPitchClasses, currentChordName, capo, 
       }
     }
 
-    const beatPosition = computeBeatPosition({ currentTime, referenceTime: rhythmReferenceRef.current, bpm });
-    setActiveBeat(beatPosition === null ? null : Math.floor(beatPosition) % 8);
+    const beatPosition = computeBeatPosition({ currentTime, referenceTime: rhythmReferenceRef.current, bpm, patternLength: pattern.length });
+    setActiveBeat(beatPosition === null ? null : Math.floor(beatPosition) % pattern.length);
 
     frameRef.current = window.requestAnimationFrame(processFrame);
   }
@@ -360,33 +422,6 @@ export function useAudioMatcher({ expectedPitchClasses, currentChordName, capo, 
     return true;
   }
 
-  function stopListening() {
-    setHearing(false);
-    if (frameRef.current) {
-      window.cancelAnimationFrame(frameRef.current);
-      frameRef.current = 0;
-    }
-
-    if (sourceRef.current) {
-      sourceRef.current.disconnect();
-      sourceRef.current = null;
-    }
-
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-
-    analyserRef.current = null;
-    resetAnalysisState();
-    setPermissionState((current) => (current === 'unsupported' || current === 'denied' ? current : 'granted'));
-  }
-
   return {
     supported,
     permissionState,
@@ -408,4 +443,3 @@ export function useAudioMatcher({ expectedPitchClasses, currentChordName, capo, 
     stopListening,
   };
 }
-
