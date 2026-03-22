@@ -71,20 +71,21 @@ function buildHistoryPath(data) {
     .join(' ');
 }
 
-function HistoryChart({ history, threshold, title, detail, statusText, statusTone }) {
+function HistoryChart({ history, threshold, title, detail, statusText, statusTone, compact = false }) {
   const path = useMemo(() => buildHistoryPath(history), [history]);
   const thresholdY = 100 - threshold * 100;
 
   return (
     <div className="analysis-block">
-      <div className="scope-meta scope-meta-top">
-        <span>{title}</span>
+      <div className={compact ? 'scope-meta' : 'scope-meta scope-meta-top'}>
+        <span>{compact ? detail : title}</span>
         <span className={`heard-status ${statusTone}`}>{statusText}</span>
       </div>
-      <div className="scope-meta scope-meta-bottom">
-        <span>{detail}</span>
-        <span>Target {Math.round(threshold * 100)}%</span>
-      </div>
+      {compact ? null : (
+        <div className="scope-meta scope-meta-bottom">
+          <span>{detail}</span>
+        </div>
+      )}
       <div className="scope-screen">
         <div className="scope-sweep" aria-hidden="true" />
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="scope-svg" aria-hidden="true">
@@ -369,7 +370,7 @@ export default function App() {
   const micPillLabel = hearing ? 'LISTENING' : permissionState === 'granted' ? 'READY' : 'MIC OFF';
   const autoMode = settings.mode === 'auto';
   const chordTone = chordSimilarity >= chordThreshold ? 'good' : chordSimilarity >= 0.45 ? 'close' : 'off';
-  const chordStatus = chordSimilarity >= chordThreshold ? 'RIGHT SHAPE' : chordSimilarity >= 0.45 ? 'CLOSE' : 'OFF';
+  const chordStatus = chordSimilarity >= chordThreshold ? 'CORRECT' : chordSimilarity >= 0.45 ? 'CLOSE' : 'OFF';
   const rhythmTone = (rhythmMetrics.last ?? 0) >= rhythmThreshold ? 'good' : (rhythmMetrics.last ?? 0) >= 0.45 ? 'close' : 'off';
   const rhythmStatus = rhythmMetrics.last === null ? 'WAITING' : formatPercent(rhythmMetrics.last);
 
@@ -459,10 +460,11 @@ export default function App() {
         <HistoryChart
           history={chordHistory}
           threshold={chordThreshold}
-          title={`Expected ${currentChord.raw}`}
-          detail={`${signalQuality.label} • similarity ${formatPercent(chordSimilarity)} • best ${detectedChord.name}`}
+          title=""
+          detail={`Similarity ${formatPercent(chordSimilarity)}`}
           statusText={chordStatus}
           statusTone={chordTone}
+          compact
         />
 
         <ChromaStrip expectedPitchClasses={currentChord.pitchClasses} chromaStrengths={chromaStrengths} />
@@ -525,3 +527,7 @@ export default function App() {
     </main>
   );
 }
+
+
+
+
